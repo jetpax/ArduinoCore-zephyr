@@ -55,10 +55,25 @@
 		 *   D11 = GPIO 10  (SPI0 MOSI)        header pin 19
 		 *   D12 = GPIO  9  (SPI0 MISO)        header pin 21
 		 *   D13 = GPIO 11  (SPI0 SCLK)        header pin 23
+		 *   D14 = GPIO 29  (on-board ACT LED) no header pin
 		 *
-		 * No on-board LED on the 40-pin header on Pi Zero 2 W, so
-		 * `builtin-led-gpios` is intentionally omitted. The Blink
-		 * demo wires an external LED on D13 per Arduino convention.
+		 * D14 isn't on the 40-pin header -- it's the green on-board
+		 * activity LED. The Pi Zero 2 W uses the Pi 3 family's
+		 * LED location (GPIO 29) rather than the original Pi Zero W's
+		 * GPIO 47 -- confirmed empirically 2026-06-06 (GPIO 47
+		 * toggles cleanly at the register but doesn't light the
+		 * board's LED; GPIO 29 does). We expose it as the Arduino
+		 * BUILTIN LED so the standard Blink sketch
+		 * (`digitalWrite(LED_BUILTIN, ...)`) blinks the on-board LED
+		 * without requiring an external jumper to D13.
+		 * ArduinoCore-zephyr's `LED_BUILTIN` macro
+		 * (cores/arduino/Arduino.h:54-67) finds the matching entry
+		 * in `digital-pin-gpios` and returns its index -- so
+		 * `LED_BUILTIN` resolves to `14`.
+		 *
+		 * NOTE: a separate variant directory for the original Pi
+		 * Zero W (BCM2835, ARMv6) will use `<&gpio1 19>` (GPIO 47)
+		 * for its on-board LED.
 		 */
 		digital-pin-gpios = <&gpio0 15 0>,
 				    <&gpio0 14 0>,
@@ -73,7 +88,11 @@
 				    <&gpio0  8 0>,
 				    <&gpio0 10 0>,
 				    <&gpio0  9 0>,
-				    <&gpio0 11 0>;
+				    <&gpio0 11 0>,
+				    <&gpio1  1 0>;
+
+		/* On-board ACT LED -- BCM GPIO 29, ACTIVE_HIGH. */
+		builtin-led-gpios = <&gpio1 1 GPIO_ACTIVE_HIGH>;
 
 		/*
 		 * `Serial` (over UART) lands on the board's mini-UART
