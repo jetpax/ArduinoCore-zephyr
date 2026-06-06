@@ -20,3 +20,19 @@ config MAIN_STACK_REGION
 	depends on CODE_DATA_RELOCATION
 	help
 	  Specify the memory region for main stack.
+
+config ARDUINO_SKETCH_LOADER_FS
+	bool "Load the sketch as an llext from a file system path"
+	depends on LLEXT && FILE_SYSTEM
+	help
+	  Replace the default flash-partition sketch loader with one that
+	  opens a file on a mounted file system (e.g. SD-FAT) via Zephyr's
+	  llext fs_loader. Use this on targets with no internal flash, such
+	  as the Raspberry Pi family boards.
+
+config ARDUINO_SKETCH_LOADER_FS_PATH
+	string "Sketch file system path"
+	depends on ARDUINO_SKETCH_LOADER_FS
+	default "/SD:/sketch.llext"
+	help
+	  Absolute path to the sketch .llext file on the mounted file system.

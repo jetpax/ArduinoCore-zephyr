@@ -9,9 +9,7 @@
 LOG_MODULE_REGISTER(sketch);
 
 #include <zephyr/kernel.h>
-#include <zephyr/storage/flash_map.h>
 #include <zephyr/llext/llext.h>
-#include <zephyr/llext/buf_loader.h>
 #include <zephyr/shell/shell.h>
 #include <zephyr/shell/shell_uart.h>
 #include <zephyr/logging/log_ctrl.h>
@@ -23,7 +21,14 @@ LOG_MODULE_REGISTER(sketch);
 #include <zephyr/drivers/uart.h>
 #include <zephyr/usb/usb_device.h>
 
+#if defined(CONFIG_ARDUINO_SKETCH_LOADER_FS)
+#include <zephyr/fs/fs.h>
+#include <zephyr/llext/fs_loader.h>
+#else
+#include <zephyr/storage/flash_map.h>
+#include <zephyr/llext/buf_loader.h>
 #include <zephyr/devicetree/fixed-partitions.h>
+#endif
 
 #define HEADER_LEN 16
 
@@ -94,6 +99,7 @@ void llext_entry(void *arg0, void *arg1, void *arg2) {
 }
 #endif /* CONFIG_USERSPACE */
 
+#if !defined(CONFIG_ARDUINO_SKETCH_LOADER_FS)
 /* Export Flash parameters for use by core building scripts */
 __attribute__((retain)) const uintptr_t sketch_base_addr =
 	DT_REG_ADDR(DT_GPARENT(DT_NODELABEL(user_sketch))) + DT_REG_ADDR(DT_NODELABEL(user_sketch));
@@ -115,8 +121,33 @@ struct backup_store {
 	uint32_t wait_for_app_magic;
 };
 volatile __stm32_backup_sram_section struct backup_store backup;
+#endif /* !CONFIG_ARDUINO_SKETCH_LOADER_FS */
 
 static int loader(const struct shell *sh) {
+#if defined(CONFIG_ARDUINO_SKETCH_LOADER_FS)
+	const char *path = CONFIG_ARDUINO_SKETCH_LOADER_FS_PATH;
+	struct llext_fs_loader fs_loader = LLEXT_FS_LOADER(path);
+	struct llext_loader *ldr = &fs_loader.loader;
+	struct llext_load_param ldr_parm = LLEXT_LOAD_PARAM_DEFAULT;
+	struct llext *ext;
+	int res;
+
+	printk("Loading sketch from %s\n", path);
+	res = llext_load(ldr, "sketch", &ext, &ldr_parm);
+	if (res) {
+		printk("Failed to load %s, rc %d\n", path, res);
+		return res;
+	}
+
+	void (*main_fn)() = llext_find_sym(&ext->exp_tab, "main");
+	if (!main_fn) {
+		printk("Failed to find main\n");
+		return -ENOENT;
+	}
+
+	llext_bootstrap(ext, main_fn, NULL);
+	return 0;
+#else
 	const struct flash_area *fa;
 	int rc;
 
@@ -346,6 +377,8 @@ static int loader(const struct shell *sh) {
 #endif
 
 #endif
+
+#endif /* !CONFIG_ARDUINO_SKETCH_LOADER_FS */
 
 	return 0;
 }
