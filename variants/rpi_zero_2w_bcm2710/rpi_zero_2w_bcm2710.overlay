@@ -1,0 +1,100 @@
+/*
+ * Copyright (c) 2026 Jonathan Elliot Peace <jep@alphabetiq.com>
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Arduino variant overlay for the Raspberry Pi Zero 2 W (BCM2710A1,
+ * Cortex-A53, aarch64). Sketches load from a FAT file on the SD card
+ * via Zephyr's fs llext loader -- there is no internal flash and no
+ * `user_sketch` partition. See notes/pizza-arduino-phase0.md for the
+ * full design.
+ */
+
+#include <zephyr/dt-bindings/gpio/gpio.h>
+
+/* SPI0 full bus on GPIO 9 (MISO), 10 (MOSI), 11 (SCLK), with CE0 on
+ * GPIO 8 driven as a GPIO chip-select. The board DTS enables `&spi0`
+ * but leaves pinctrl to the application overlay, by design.
+ */
+&spi0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&spi0_gpio7>;
+	cs-gpios = <&gpio0 8 GPIO_ACTIVE_LOW>;
+	status = "okay";
+};
+
+/ {
+	fstab {
+		compatible = "zephyr,fstab";
+
+		sd: sd {
+			compatible = "zephyr,fstab,fatfs";
+			disk-access;
+			automount;
+			mount-point = "/SD:";
+		};
+	};
+
+	zephyr,user {
+		/*
+		 * Arduino digital pin map for the Pi 40-pin header.
+		 * D0/D1 follow the Arduino Uno convention (D0 = RX, D1 = TX);
+		 * D10..D13 align with SPI0 so SPI sketches Just Work.
+		 *
+		 *   D0  = GPIO 15  (UART1 RX)         header pin 10
+		 *   D1  = GPIO 14  (UART1 TX)         header pin 8
+		 *   D2  = GPIO  4                     header pin 7
+		 *   D3  = GPIO 17                     header pin 11
+		 *   D4  = GPIO 27                     header pin 13
+		 *   D5  = GPIO 22                     header pin 15
+		 *   D6  = GPIO  5                     header pin 29
+		 *   D7  = GPIO  6                     header pin 31
+		 *   D8  = GPIO 23                     header pin 16
+		 *   D9  = GPIO 24                     header pin 18
+		 *   D10 = GPIO  8  (SPI0 CE0)         header pin 24
+		 *   D11 = GPIO 10  (SPI0 MOSI)        header pin 19
+		 *   D12 = GPIO  9  (SPI0 MISO)        header pin 21
+		 *   D13 = GPIO 11  (SPI0 SCLK)        header pin 23
+		 *
+		 * No on-board LED on the 40-pin header on Pi Zero 2 W, so
+		 * `builtin-led-gpios` is intentionally omitted. The Blink
+		 * demo wires an external LED on D13 per Arduino convention.
+		 */
+		digital-pin-gpios = <&gpio0 15 0>,
+				    <&gpio0 14 0>,
+				    <&gpio0  4 0>,
+				    <&gpio0 17 0>,
+				    <&gpio0 27 0>,
+				    <&gpio0 22 0>,
+				    <&gpio0  5 0>,
+				    <&gpio0  6 0>,
+				    <&gpio0 23 0>,
+				    <&gpio0 24 0>,
+				    <&gpio0  8 0>,
+				    <&gpio0 10 0>,
+				    <&gpio0  9 0>,
+				    <&gpio0 11 0>;
+
+		/*
+		 * `Serial` (over UART) lands on the board's mini-UART
+		 * (uart1 @ GPIO 14/15, 115200), the same console pin pair
+		 * the rest of the rpi_zero_2w port already uses. Higher
+		 * Arduino `SerialN` slots are unbound until a second UART
+		 * gets wired.
+		 */
+		serials = <&uart1>;
+
+		/* Wire = BSC1 ("I2C1") at GPIO 2 (SDA) / GPIO 3 (SCL). */
+		i2cs = <&i2c1>;
+
+		/* SPI = SPI0 full bus, see &spi0 above. */
+		spis = <&spi0>;
+
+		/*
+		 * No ADC on this SoC -> `analogRead` is unavailable; no
+		 * `adc-pin-gpios` / `io-channels` nodes by design.
+		 * No PWM driver bound yet -> `analogWrite` unavailable;
+		 * no `pwm-pin-gpios` / `pwms` nodes by design.
+		 */
+	};
+};
