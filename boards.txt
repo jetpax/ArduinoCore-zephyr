@@ -666,6 +666,10 @@ unoq.bootloader.target=stm32u585zitxq
 pizza.name=PiZZA (Raspberry Pi Zero 2 W)
 pizza.build.core=arduino
 pizza.build.crossprefix=aarch64-zephyr-elf-
+# Until the aarch64-zephyr-elf toolchain ships as an Arduino-packaged tool,
+# the developer needs a symlink at
+#   ~/Library/Arduino15/packages/arduino-git/tools/aarch64-zephyr-elf/0.17.0
+# pointing to their local Zephyr SDK (`~/zephyr-sdk/aarch64-zephyr-elf`).
 pizza.build.compiler_path={runtime.tools.aarch64-zephyr-elf-0.17.0.path}/bin/
 
 pizza.build.zephyr_target=rpi_zero_2w/bcm2710
@@ -676,10 +680,29 @@ pizza.build.artifact=zephyr_main
 pizza.build.board=PIZZA
 pizza.build.zephyr_toolchain=aarch64-zephyr-elf
 
-# No USB DFU on this target -- the Pi boots from SD. The sketch ".llext"
-# is copied to a fixed path on the FAT boot partition by Phase 4 tooling;
-# stub these keys so the IDE doesn't try a 1200-bps touch / USB reset.
-pizza.upload.tool=none
+# No USB DFU on this target -- the Pi boots from SD. The sketch is the raw
+# relocatable ELF (not the upstream Arduino header-wrapped variant), since
+# the PiZZA loader's fs_loader path consumes a stock ELF/llext file directly.
+pizza.upload.extension=elf
+
+# Skip the zephyr-sketch-tool header-wrap hooks -- the relocatable ELF
+# produced by the linker IS our final .llext, no header needed.
+pizza.recipe.hooks.objcopy.postobjcopy.1.pattern=
+pizza.recipe.hooks.objcopy.postobjcopy.2.pattern=
+
+# Skip the zephyr-check-size step -- PiZZA sketches live on SD-FAT with no
+# fixed flash-partition size limit. (The default tool reads bounds from a
+# .config file we'd otherwise have to maintain.)
+pizza.recipe.size.pattern=
+
+# Upload via the SD-FAT copy tool defined in platform.txt. Mount path is
+# /Volumes/RECOVERY on macOS (PINN convention); override per-OS below.
+pizza.upload.tool=sdfat
+pizza.upload.tool.default=sdfat
+pizza.upload.sdfat.mount=/Volumes/RECOVERY
+pizza.upload.sdfat.mount.macosx=/Volumes/RECOVERY
+pizza.upload.sdfat.mount.linux=/media/{user}/RECOVERY
+pizza.upload.sdfat.mount.windows=E:
 pizza.upload.use_1200bps_touch=false
 pizza.upload.wait_for_upload_port=false
 pizza.upload.native_usb=false

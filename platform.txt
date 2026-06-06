@@ -327,6 +327,21 @@ tools.jlink.upload.params.verbose=-v
 tools.jlink.upload.params.quiet=
 tools.jlink.upload.pattern="{path}/{cmd}" -CommanderScript "{build.path}/flasher.jlink"
 
+#
+# sdfat: copy a sketch llext to a mounted FAT partition on the SD card
+# and unmount, for boards that boot from SD with no UF2/USB DFU
+# (e.g. the PiZZA / Raspberry Pi Zero 2 W variant). The mount-point
+# path is `{upload.sdfat.mount}` -- set per-board in boards.txt with
+# an OS-specific override.
+#
+tools.sdfat.path=
+tools.sdfat.cmd=
+tools.sdfat.upload.params.verbose=
+tools.sdfat.upload.params.quiet=
+tools.sdfat.upload.pattern.macosx=/bin/sh -c "cp '{build.path}/{build.project_name}.{upload.extension}' '{upload.sdfat.mount}/sketch.llext' && diskutil eject '{upload.sdfat.mount}'"
+tools.sdfat.upload.pattern.linux=/bin/sh -c "cp '{build.path}/{build.project_name}.{upload.extension}' '{upload.sdfat.mount}/sketch.llext' && sync && umount '{upload.sdfat.mount}'"
+tools.sdfat.upload.pattern.windows=cmd /C copy "{build.path}\{build.project_name}.{upload.extension}" "{upload.sdfat.mount}\sketch.llext"
+
 
 #
 # Debugger
