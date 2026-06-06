@@ -672,6 +672,12 @@ pizza.build.crossprefix=aarch64-zephyr-elf-
 # pointing to their local Zephyr SDK (`~/zephyr-sdk/aarch64-zephyr-elf`).
 pizza.build.compiler_path={runtime.tools.aarch64-zephyr-elf-0.17.0.path}/bin/
 
+# Override platform.txt's link_command to drop --specs=nano.specs /nosys.specs:
+# the aarch64-zephyr-elf toolchain ships picolibc (not newlib-nano), so those
+# spec files don't exist. The relocatable-ELF link doesn't need picolibc.specs
+# either -- nothing needs the startup-file or syscall stubs at link time.
+pizza.build.link_command="{compiler.path}{compiler.c.elf.cmd}" "-L{build.path}" "-L{build.variant.path}" {compiler.c.elf.flags} {compiler.c.elf.extra_flags} {build.extra_flags} {build.extra_ldflags} {compiler.zephyr.common_ldflags} {compiler.ldflags} {object_files} -Wl,--start-group "{build.path}/{archive_file}" {compiler.zephyr.extra_ldflags} {compiler.libraries.ldflags} -Wl,--end-group {build.link_args.{build.link_mode}}
+
 pizza.build.zephyr_target=rpi_zero_2w/bcm2710
 pizza.build.zephyr_args=-DTOOLCHAIN_HAS_GLIBCXX=ON
 pizza.build.zephyr_hals=hal_broadcom
@@ -694,6 +700,13 @@ pizza.recipe.hooks.objcopy.postobjcopy.2.pattern=
 # fixed flash-partition size limit. (The default tool reads bounds from a
 # .config file we'd otherwise have to maintain.)
 pizza.recipe.size.pattern=
+
+# Skip the gen-rodata-ld multi-pass rodata split. That tool exists to feed
+# CONFIG_LLEXT_RODATA_NO_RELOC=y, which we explicitly disable on aarch64+MMU
+# in the variant .conf. Replace the second-pass link with one that drops
+# the rodata_split.ld dependency.
+pizza.recipe.c.combine.3.pattern=
+pizza.recipe.c.combine.4.pattern={build.link_command} {build.link_args.build-{build.link_mode}} {build.link_args.build-common}
 
 # Upload via the SD-FAT copy tool defined in platform.txt. Mount path is
 # /Volumes/RECOVERY on macOS (PINN convention); override per-OS below.
