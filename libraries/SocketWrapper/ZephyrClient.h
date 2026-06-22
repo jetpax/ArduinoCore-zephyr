@@ -60,6 +60,9 @@ public:
 	}
 #endif
 	uint8_t connected() override {
+		if (available() > 0) {
+			return 1;
+		}
 		uint8_t buf;
 		int ret = ::recv(*sock_fd, &buf, 1, MSG_PEEK | MSG_DONTWAIT);
 		if (ret == 0) {
