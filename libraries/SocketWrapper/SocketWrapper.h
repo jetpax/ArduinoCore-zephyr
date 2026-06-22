@@ -7,12 +7,14 @@
 #pragma once
 
 #include "zephyr/sys/printk.h"
+#include <zephyr/sys/util.h>
 #if defined(CONFIG_FILE_SYSTEM)
 #include <zephyr/fs/fs.h>
 #endif
 
 #if defined(CONFIG_NET_SOCKETS_SOCKOPT_TLS)
 #include <zephyr/net/tls_credentials.h>
+#include <mbedtls/x509.h>
 #define CA_CERTIFICATE_TAG_BASE 1
 #endif
 
@@ -78,6 +80,37 @@ protected:
 		}
 		delete fd;
 	}
+
+#if defined(CONFIG_NET_SOCKETS_TLS_CERT_VERIFY_CALLBACK)
+	static bool has_valid_wall_clock_time() {
+		struct timespec ts;
+		if (sys_clock_gettime(SYS_CLOCK_REALTIME, &ts) != 0) {
+			return false;
+		}
+
+		/*
+		 * If the clock is near Unix epoch, time is likely not synchronized.
+		 * 1704067200 == 2024-01-01 00:00:00 UTC.
+		 */
+		return ts.tv_sec >= 1704067200LL;
+	}
+
+	static int cert_verify_cb(void *ctx, void *crt, int depth, uint32_t *flags) {
+		ARG_UNUSED(ctx);
+		ARG_UNUSED(crt);
+		ARG_UNUSED(depth);
+
+		/*
+		 * Keep verification strict by default. Only ignore certificate expiry
+		 * when wall-clock time is clearly invalid/unset.
+		 */
+		if (!has_valid_wall_clock_time()) {
+			*flags &= ~(MBEDTLS_X509_BADCERT_EXPIRED | MBEDTLS_X509_BADCERT_FUTURE);
+		}
+
+		return 0;
+	}
+#endif
 
 public:
 	ZephyrSocketWrapper() = default;
@@ -192,6 +225,13 @@ public:
 
 		int verify = ZSOCK_TLS_PEER_VERIFY_NONE;
 
+#if defined(CONFIG_NET_SOCKETS_TLS_CERT_VERIFY_CALLBACK)
+		struct zsock_tls_cert_verify_cb cb = {
+			.cb = (void*)cert_verify_cb,
+			.ctx = nullptr,
+		};
+#endif
+
 		while (resolve_attempts--) {
 			ret = getaddrinfo(host, String(port).c_str(), &hints, &res);
 
@@ -240,6 +280,9 @@ public:
 		if (setsockopt(*sock_fd, SOL_TLS, TLS_SEC_TAG_LIST, sec_tag_opt, tag_count * sizeof(sec_tag_t))
 			|| setsockopt(*sock_fd, SOL_TLS, TLS_HOSTNAME, host, strlen(host))
 			|| setsockopt(*sock_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout_opt, sizeof(timeout_opt))
+#if defined(CONFIG_NET_SOCKETS_TLS_CERT_VERIFY_CALLBACK) && defined(CONFIG_MBEDTLS_HAVE_TIME_DATE)
+			|| setsockopt(*sock_fd, SOL_TLS, TLS_CERT_VERIFY_CALLBACK, &cb, sizeof(cb))
+#endif
 			//|| setsockopt(*sock_fd, SOL_TLS, TLS_PEER_VERIFY, &verify, sizeof(verify))
 			) {
 			goto exit;
