@@ -49,8 +49,8 @@ protected:
 
 		size_t file_size = entry.size;
 
-		// Allocate buffer for entire file (+1 for NULL terminator)
-		cadata = (char *)malloc(file_size + 1);
+		// Allocate buffer for entire file
+		cadata = (char *)malloc(file_size);
 		if (!cadata) {
 			fs_close(&file);
 			return false;
@@ -66,8 +66,7 @@ protected:
 			return false;
 		}
 
-		cadata[file_size] = '\0';
-		cadata_len = file_size + 1;
+		cadata_len = file_size;
 		return true;
 	}
 #endif
@@ -191,6 +190,8 @@ public:
 			.tv_usec = 100000,
 		};
 
+		int verify = ZSOCK_TLS_PEER_VERIFY_NONE;
+
 		while (resolve_attempts--) {
 			ret = getaddrinfo(host, String(port).c_str(), &hints, &res);
 
@@ -207,7 +208,7 @@ public:
 
 #if defined(CONFIG_FILE_SYSTEM)
 		// Try to load builtin CA from filesystem (once)
-		if (cadata == nullptr && loadCADataFromFS()) {
+		if (cert == nullptr && cadata == nullptr && loadCADataFromFS()) {
 			// Successfully loaded, add with tag (ignore errors)
 			if (tls_credential_add(tag++, TLS_CREDENTIAL_CA_CERTIFICATE, cadata, cadata_len)) {
 				goto exit;
@@ -236,13 +237,16 @@ public:
 			goto exit;
 		}
 
-		if (setsockopt(*sock_fd, SOL_TLS, TLS_HOSTNAME, host, strlen(host)) ||
-			setsockopt(*sock_fd, SOL_TLS, TLS_SEC_TAG_LIST, sec_tag_opt, sizeof(sec_tag_opt)) ||
-			setsockopt(*sock_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout_opt, sizeof(timeout_opt))) {
+		if (setsockopt(*sock_fd, SOL_TLS, TLS_SEC_TAG_LIST, sec_tag_opt, tag_count * sizeof(sec_tag_t))
+			|| setsockopt(*sock_fd, SOL_TLS, TLS_HOSTNAME, host, strlen(host))
+			|| setsockopt(*sock_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout_opt, sizeof(timeout_opt))
+			//|| setsockopt(*sock_fd, SOL_TLS, TLS_PEER_VERIFY, &verify, sizeof(verify))
+			) {
 			goto exit;
 		}
 
-		if (::connect(*sock_fd, res->ai_addr, res->ai_addrlen) < 0) {
+		ret = zsock_connect(*sock_fd, res->ai_addr, res->ai_addrlen);
+		if (ret < 0) {
 			goto exit;
 		}
 
@@ -250,6 +254,12 @@ public:
 		is_ssl = true;
 
 	exit:
+
+		if (cadata != nullptr) {
+			free(cadata);
+			cadata = nullptr;
+		}
+
 		if (res != nullptr) {
 			freeaddrinfo(res);
 			res = nullptr;
