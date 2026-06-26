@@ -1,0 +1,15 @@
+{
+  "name": "PiZZA Boards (Arduino on Zephyr)",
+  "architecture": "zephyr",
+  "category": "Contributed",
+  "help": {
+    "online": "https://github.com/jetpax/PiZZa#readme"
+  },
+  "toolsDependencies": [
+    {
+      "packager": "pizza",
+      "name": "aarch64-zephyr-elf",
+      "version": "0.17.0"
+    }
+  ]
+}

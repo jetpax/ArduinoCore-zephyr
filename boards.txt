@@ -682,7 +682,7 @@ pizza.build.zephyr_target=rpi_zero_2w/bcm2710
 pizza.build.zephyr_args=-DTOOLCHAIN_HAS_GLIBCXX=ON
 pizza.build.zephyr_hals=hal_broadcom
 pizza.build.variant=rpi_zero_2w_bcm2710
-pizza.build.artifact=zephyr_main
+pizza.build.artifact=pizza
 pizza.build.board=PIZZA
 pizza.build.zephyr_toolchain=aarch64-zephyr-elf
 
@@ -712,6 +712,8 @@ pizza.recipe.c.combine.4.pattern={build.link_command} {build.link_args.build-{bu
 # /Volumes/RECOVERY on macOS (PINN convention); override per-OS below.
 pizza.upload.tool=sdfat
 pizza.upload.tool.default=sdfat
+pizza.upload.protocol=
+pizza.upload.transport=
 pizza.upload.sdfat.mount=/Volumes/RECOVERY
 pizza.upload.sdfat.mount.macosx=/Volumes/RECOVERY
 pizza.upload.sdfat.mount.linux=/media/{user}/RECOVERY
