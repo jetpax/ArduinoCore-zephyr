@@ -1,0 +1,103 @@
+# Copyright (c) jetpax
+# SPDX-License-Identifier: Apache-2.0
+
+# Build, package and release the PiZZA core on a `pizza-v*` tag.
+#
+# Produces ArduinoCore-pizza-<ver>.tar.bz2 as a GitHub Release asset and emits
+# the package-index platform fragment so jetpax/pizza-boards-index can be bumped.
+#
+# STATUS: FIRST DRAFT, NOT YET RUN. The build cannot reproduce the local loader
+# until the prerequisite below is met.
+#
+# PREREQUISITE (blocks this workflow):
+#   west.yml still points `zephyr` at arduino/zephyr@zephyr-arduino-v4.2.0, which
+#   has none of the PiZZA work (rpi_zero_2w board, BCM2710 SoC, BCM drivers incl.
+#   the SDHost CMD12 fix, hal_broadcom). For CI to build what we build locally,
+#   west.yml must pin `zephyr` to a published fork (e.g. jetpax/zephyr@pizero) and
+#   add a fetchable hal_broadcom project. bootstrap.sh already enables hal_broadcom
+#   via build.zephyr_hals -> manifest.project-filter, so no script change is needed
+#   once the manifest is corrected.
+#
+# OPEN (resolve during first CI/IDE round-trip):
+#   - Toolchain layout: sdk-ng toolchain_*_aarch64-zephyr-elf.tar.xz extracts to a
+#     nested `aarch64-zephyr-elf/` dir, but boards.txt compiler_path expects
+#     {tool.path}/bin/. Either re-host a stripped tarball or adjust compiler_path.
+
+name: Release PiZZA core
+
+on:
+  push:
+    tags:
+      - 'pizza-v*'
+  workflow_dispatch:
+
+env:
+  HEAD_REF: ${{ github.ref }}
+
+jobs:
+  build-and-release:
+    name: Build, package, release PiZZA
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write   # create the GitHub Release + upload the asset
+    steps:
+      - name: Install OS dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            git cmake wget python3-pip python3-venv ninja-build jq bzip2 rsync
+
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          fetch-tags: true   # get_core_version.sh needs tags
+
+      - name: Bootstrap Zephyr workspace (pulls Zephyr + hal_broadcom)
+        # bootstrap.sh reads build.zephyr_hals from boards.txt and enables the
+        # matching HALs (hal_broadcom) via manifest.project-filter, then installs
+        # the default arm-zephyr-eabi SDK.
+        run: yes | ./extra/bootstrap.sh -o=--filter=tree:0
+
+      - name: Install AArch64 toolchain (PiZZA build uses this, not arm-zephyr-eabi)
+        run: |
+          source venv/bin/activate
+          west sdk install --version 0.17.0 -t aarch64-zephyr-elf
+
+      - name: Build PiZZA loader + generate Arduino artifacts
+        # build.sh does: west build loader -t llext-edk, EDK extract + comment-strip,
+        # copy firmwares/, gen_provides (tls-syms.S / syms-*.ld), gen_arduino_files,
+        # and update boards.local.txt. Equivalent to D1 steps 5-10.
+        run: ./extra/build.sh pizza
+
+      - name: Package the standalone PiZZA core
+        id: pack
+        run: |
+          VER=$(extra/get_core_version.sh)
+          TAG=$(git describe --tags --exact-match --exclude '*/*' 2>/dev/null || echo "$VER")
+          ARCHIVE="ArduinoCore-pizza-${TAG#pizza-v}.tar.bz2"
+          ./extra/package_core.sh pizza "$TAG" "distrib/${ARCHIVE}"
+          ./extra/gen_package_index_json.sh pizza "distrib/${ARCHIVE}" "distrib/pizza-platform.json"
+          echo "version=${TAG#pizza-v}" >> "$GITHUB_OUTPUT"
+          echo "archive=distrib/${ARCHIVE}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release with the core asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            "${{ steps.pack.outputs.archive }}" \
+            --title "PiZZA core ${{ steps.pack.outputs.version }}" \
+            --notes "Arduino-on-Zephyr core for the Raspberry Pi Zero 2 W. Install via the Boards Manager index: https://github.com/jetpax/pizza-boards-index"
+
+      - name: Upload package-index fragment (for jetpax/pizza-boards-index bump)
+        uses: actions/upload-artifact@v7
+        with:
+          name: pizza-platform-json
+          path: distrib/pizza-platform.json
+
+      # NEXT: a follow-on job (or a workflow in pizza-boards-index) splices
+      # distrib/pizza-platform.json into package_pizza_index.json (version, url,
+      # checksum, size) and opens a PR there. Note the gen_package_index_json.sh
+      # `url` points at downloads.arduino.cc; it must be rewritten to the GitHub
+      # release asset URL for our fork.
