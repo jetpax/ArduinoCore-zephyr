@@ -346,16 +346,15 @@ tools.sdfat.upload.pattern.windows=cmd /C copy "{build.path}\{build.project_name
 # cdcupload: push a sketch over USB CDC to the PiZZa in-process loader
 # (1200-bps touch + "PZUP"+le32len+bytes framing; swap with no reboot).
 # Default "USB (CDC)" upload method for the PiZZA / Raspberry Pi Zero 2 W
-# variant. Currently a bundled pyserial script (needs python3 + pyserial on
-# the host); a self-contained binary is the Phase-6f distribution follow-up.
+# variant. The uploader is the self-contained `cdc-upload` tool dependency
+# (a static Go binary built on go.bug.st/serial, no host python/pyserial),
+# installed per-host by the Boards Manager via toolsDependencies.
 #
-tools.cdcupload.path={runtime.platform.path}/tools/cdc-upload
-tools.cdcupload.cmd=cdc-upload.py
 tools.cdcupload.upload.params.verbose=
 tools.cdcupload.upload.params.quiet=
-tools.cdcupload.upload.pattern.macosx=/usr/bin/env python3 "{path}/{cmd}" "{serial.port}" "{build.path}/{build.project_name}.{upload.extension}"
-tools.cdcupload.upload.pattern.linux=/usr/bin/env python3 "{path}/{cmd}" "{serial.port}" "{build.path}/{build.project_name}.{upload.extension}"
-tools.cdcupload.upload.pattern.windows=python "{path}\{cmd}" "{serial.port}" "{build.path}\{build.project_name}.{upload.extension}"
+tools.cdcupload.upload.pattern.macosx="{runtime.tools.cdc-upload.path}/cdc-upload" "{serial.port}" "{build.path}/{build.project_name}.{upload.extension}"
+tools.cdcupload.upload.pattern.linux="{runtime.tools.cdc-upload.path}/cdc-upload" "{serial.port}" "{build.path}/{build.project_name}.{upload.extension}"
+tools.cdcupload.upload.pattern.windows="{runtime.tools.cdc-upload.path}\cdc-upload.exe" "{serial.port}" "{build.path}\{build.project_name}.{upload.extension}"
 
 
 #
