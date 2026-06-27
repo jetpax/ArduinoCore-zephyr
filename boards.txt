@@ -19,6 +19,7 @@
 menu.debug=Debug
 menu.link_mode=Link mode
 menu.wait_linux_boot=Startup mode
+menu.upload_method=Upload method
 
 ##########################################################################################
 
@@ -708,18 +709,48 @@ pizza.recipe.size.pattern=
 pizza.recipe.c.combine.3.pattern=
 pizza.recipe.c.combine.4.pattern={build.link_command} {build.link_args.build-{build.link_mode}} {build.link_args.build-common}
 
-# Upload via the SD-FAT copy tool defined in platform.txt. Mount path is
-# /Volumes/RECOVERY on macOS (PINN convention); override per-OS below.
-pizza.upload.tool=sdfat
-pizza.upload.tool.default=sdfat
+# Two upload methods, selectable via Tools -> Upload method:
+#
+#   "USB (CDC)"      [default] -- single-cable upload to the running loader.
+#                    The cdcupload tool does the 1200-bps touch itself and
+#                    streams the sketch over CDC; the loader swaps it
+#                    in-process (no reboot, no card swap). See platform.txt
+#                    tools.cdcupload + tools/cdc-upload/cdc-upload.py.
+#   "SD card reader" -- legacy flow: copy the .llext onto the FAT partition
+#                    mounted at /Volumes/RECOVERY (PINN convention) and eject;
+#                    for headless / no-USB-host use.
+#
+# Base defaults mirror the USB (CDC) method so an un-changed menu still does
+# the single-cable upload; the sdfat mount paths stay defined for the SD
+# method to pick up.
 pizza.upload.protocol=
 pizza.upload.transport=
+pizza.upload.tool=cdcupload
+pizza.upload.tool.default=cdcupload
+pizza.upload.native_usb=true
+pizza.upload.use_1200bps_touch=false
+pizza.upload.wait_for_upload_port=false
 pizza.upload.sdfat.mount=/Volumes/RECOVERY
 pizza.upload.sdfat.mount.macosx=/Volumes/RECOVERY
 pizza.upload.sdfat.mount.linux=/media/{user}/RECOVERY
 pizza.upload.sdfat.mount.windows=E:
-pizza.upload.use_1200bps_touch=false
-pizza.upload.wait_for_upload_port=false
-pizza.upload.native_usb=false
+
+pizza.menu.upload_method.usbcdc=USB (CDC)
+pizza.menu.upload_method.usbcdc.upload.tool=cdcupload
+pizza.menu.upload_method.usbcdc.upload.tool.default=cdcupload
+pizza.menu.upload_method.usbcdc.upload.native_usb=true
+pizza.menu.upload_method.usbcdc.upload.use_1200bps_touch=false
+pizza.menu.upload_method.usbcdc.upload.wait_for_upload_port=false
+
+pizza.menu.upload_method.sdreader=SD card reader
+pizza.menu.upload_method.sdreader.upload.tool=sdfat
+pizza.menu.upload_method.sdreader.upload.tool.default=sdfat
+pizza.menu.upload_method.sdreader.upload.native_usb=false
+pizza.menu.upload_method.sdreader.upload.use_1200bps_touch=false
+pizza.menu.upload_method.sdreader.upload.wait_for_upload_port=false
+pizza.menu.upload_method.sdreader.upload.sdfat.mount=/Volumes/RECOVERY
+pizza.menu.upload_method.sdreader.upload.sdfat.mount.macosx=/Volumes/RECOVERY
+pizza.menu.upload_method.sdreader.upload.sdfat.mount.linux=/media/{user}/RECOVERY
+pizza.menu.upload_method.sdreader.upload.sdfat.mount.windows=E:
 
 ##############################################################################################################
