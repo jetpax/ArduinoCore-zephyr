@@ -23,6 +23,32 @@
 	status = "okay";
 };
 
+/* VideoCore mailbox + firmware: the USB PHY on this SoC is powered on via a
+ * VC SET_POWER_STATE mailbox call, so both must be enabled before the dwc2
+ * controller can enumerate. (Proven on the Phase-6 cdc-loader spike.)
+ */
+&mbox0 {
+	status = "okay";
+};
+
+&firmware {
+	status = "okay";
+};
+
+/* USB device controller (snps,dwc2). The bcm2710 dtsi labels this node both
+ * `usb` and `zephyr_udc0`; the Arduino core binds its single USBD context to
+ * DT_NODELABEL(zephyr_udc0). The CDC ACM child is the board's `Serial` -- the
+ * loader owns USB bring-up and the upload channel, see the variant .conf
+ * (CONFIG_ARDUINO_USB_LOADER_OWNED) and loader/main.c.
+ */
+&zephyr_udc0 {
+	status = "okay";
+
+	board_cdc_acm_uart: board_cdc_acm_uart {
+		compatible = "zephyr,cdc-acm-uart";
+	};
+};
+
 / {
 	fstab {
 		compatible = "zephyr,fstab";
@@ -95,12 +121,18 @@
 		builtin-led-gpios = <&gpio1 1 GPIO_ACTIVE_HIGH>;
 
 		/*
-		 * `Serial` (over UART) lands on the board's mini-UART
-		 * (uart1 @ GPIO 14/15, 115200), the same console pin pair
-		 * the rest of the rpi_zero_2w port already uses. Higher
-		 * Arduino `SerialN` slots are unbound until a second UART
-		 * gets wired.
+		 * `Serial` is the USB CDC ACM device (matching every other
+		 * Arduino USB board): it carries both the sketch's serial I/O
+		 * and the Phase-6 upload channel. The presence of
+		 * `cdc-acm-serial` makes ArduinoCore's ZARD_FIRST_SERIAL_IS_SERIALUSB
+		 * true, so `Serial` is a SerialUSB_ on this node.
+		 *
+		 * The board's mini-UART (uart1 @ GPIO 14/15, 115200) drops to
+		 * `Serial1` and remains the console + LOG_* backend (chosen
+		 * zephyr,console in the board DTS). Higher `SerialN` slots are
+		 * unbound until a second UART gets wired.
 		 */
+		cdc-acm-serial = <&board_cdc_acm_uart>;
 		serials = <&uart1>;
 
 		/* Wire = BSC1 ("I2C1") at GPIO 2 (SDA) / GPIO 3 (SCL). */

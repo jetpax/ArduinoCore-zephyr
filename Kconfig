@@ -58,4 +58,18 @@ config USB_DEVICE_PID
 	hex "USB Device Product ID"
 	default 0x0001
 
+config ARDUINO_USB_LOADER_OWNED
+	bool "USB device is brought up and owned by the loader"
+	default n
+	help
+	  On targets where the loader (not the sketch) owns the USB device --
+	  e.g. the in-process CDC upload/swap loader for SoCs with no
+	  sys_reboot (BCM2710 / Raspberry Pi Zero 2 W) -- the loader brings
+	  USBD up at boot and keeps it up across sketch reloads. With this
+	  set, the sketch's SerialUSB_ attaches to the already-up CDC ACM
+	  device (configure + RX-enable only) instead of re-initialising and
+	  re-enabling USBD, and the sketch-side 1200-bps reset path is
+	  compiled out (the loader handles the upload touch). Default n keeps
+	  every other board's behaviour unchanged.
+
 endif

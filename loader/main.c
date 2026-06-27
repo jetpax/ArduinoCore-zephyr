@@ -24,6 +24,11 @@ LOG_MODULE_REGISTER(sketch);
 #if defined(CONFIG_ARDUINO_SKETCH_LOADER_FS)
 #include <zephyr/fs/fs.h>
 #include <zephyr/llext/fs_loader.h>
+#if defined(CONFIG_ARDUINO_SKETCH_LOADER_CDC_UPLOAD)
+#include <zephyr/sys/ring_buffer.h>
+#include <zephyr/sys/byteorder.h>
+#include <string.h>
+#endif
 #else
 #include <zephyr/storage/flash_map.h>
 #include <zephyr/llext/buf_loader.h>
@@ -123,7 +128,7 @@ struct backup_store {
 volatile __stm32_backup_sram_section struct backup_store backup;
 #endif /* !CONFIG_ARDUINO_SKETCH_LOADER_FS */
 
-static int loader(const struct shell *sh) {
+__maybe_unused static int loader(const struct shell *sh) {
 #if defined(CONFIG_ARDUINO_SKETCH_LOADER_FS)
 	const char *path = CONFIG_ARDUINO_SKETCH_LOADER_FS_PATH;
 	struct llext_fs_loader fs_loader = LLEXT_FS_LOADER(path);
@@ -387,7 +392,305 @@ static int loader(const struct shell *sh) {
 SHELL_CMD_REGISTER(sketch, NULL, "Run sketch", loader);
 #endif
 
+#if defined(CONFIG_ARDUINO_SKETCH_LOADER_CDC_UPLOAD)
+/*
+ * Phase-6 in-process CDC upload + swap supervisor (rpi_zero_2w / BCM2710).
+ *
+ * The loader owns USB: it brings USBD up at boot, runs the sketch in its own
+ * thread, and watches the CDC line for the IDE's 1200-bps "enter upload"
+ * touch. On the touch it aborts the running sketch, receives a fresh
+ * sketch.llext over CDC, writes it to the firmware-owned SD, and starts it --
+ * all in-process, no reboot (this SoC has no sys_reboot). Because the firmware
+ * owns the SD the entire time, a sketch can still use it for Storage.
+ *
+ * Wire protocol (host -> device): "PZUP" + <le32 length> + <length bytes>;
+ * the device replies "OK\n" or "ERR ...\n" on the same CDC line. Ported from
+ * the hardware-proven spike PiZZa/os/Arduino/spikes/cdc-loader.
+ */
+
+/* Supervisor runs above the sketch so its 30 ms baud poll preempts even a
+ * busy-looping sketch (this board's lowest preemptible prio is
+ * CONFIG_MAIN_THREAD_PRIORITY == 14, so the sketch cannot go lower; the
+ * supervisor goes higher instead). */
+#define CDC_SUPERVISOR_PRIO 7
+#define CDC_SKETCH_PRIO     CONFIG_MAIN_THREAD_PRIORITY
+
+#define UP_MAGIC "PZUP"
+#define SKETCH_PATH CONFIG_ARDUINO_SKETCH_LOADER_FS_PATH
+/* Receive into a temp file and rename on success, so an interrupted upload
+ * (stall, unplug, power loss) never corrupts the live sketch. */
+#define SKETCH_TMP_PATH SKETCH_PATH ".tmp"
+
+/* The CDC ACM device is `usb_dev` (declared above under
+ * ZARD_FIRST_SERIAL_IS_SERIALUSB) -- the same node the sketch's `Serial`
+ * binds to. */
+/* Sized to hold a whole typical sketch so the USB receive never outruns it and
+ * the flow-control path (disable/re-enable RX, below) doesn't engage -- that
+ * cycling races cdc_acm's in-flight OUT transfer and spams "RX transfer already
+ * in progress". Flow control stays as the correctness net for sketches larger
+ * than this. 32 KiB is the non-large ring max (UINT16_MAX/2); enabling
+ * CONFIG_RING_BUFFER_LARGE to go bigger would change struct ring_buf's ABI,
+ * which the Arduino `Serial` embeds -- breaking every prebuilt sketch. So cap
+ * here and let flow control handle the rare >32 KiB sketch. */
+RING_BUF_DECLARE(cdc_rx_rb, 32767);
+/* Set by the ISR when it disables RX on a full ring; cleared by the consumer
+ * when it re-enables. Lets cdc_rx_exact re-enable RX only on the paused->active
+ * edge instead of every drain (avoids cdc_acm "RX transfer already in progress"
+ * spam). */
+static volatile bool cdc_rx_paused;
+
+/* CDC RX ISR: drain the FIFO into the loader's ring buffer, but only as far as
+ * there is room. When the ring fills we disable the RX IRQ and leave the bytes
+ * in the CDC FIFO -- the cdc_acm OUT endpoint then NAKs and the host throttles
+ * (flow control). The consumer (cdc_rx_exact) re-enables RX after it drains.
+ * Without this, a sketch larger than the ring (8 KiB) overruns it and
+ * ring_buf_put drops bytes, so the receive stalls forever waiting for data
+ * that was lost. */
+static void cdc_rx_isr(const struct device *dev, void *user) {
+	ARG_UNUSED(user);
+	uart_irq_update(dev);
+	while (uart_irq_rx_ready(dev)) {
+		uint8_t tmp[64];
+		uint32_t space = ring_buf_space_get(&cdc_rx_rb);
+
+		if (space == 0) {
+			cdc_rx_paused = true;
+			uart_irq_rx_disable(dev);
+			break;
+		}
+
+		int n = uart_fifo_read(dev, tmp, MIN(space, sizeof(tmp)));
+
+		if (n <= 0) {
+			break;
+		}
+		ring_buf_put(&cdc_rx_rb, tmp, n);
+	}
+}
+
+/* Take CDC RX from whoever currently holds it (a running sketch's Serial) and
+ * route it into the loader's ring buffer for the upload window. */
+static void cdc_rx_take(void) {
+	uart_irq_rx_disable(usb_dev);
+	uart_irq_callback_set(usb_dev, cdc_rx_isr);
+	ring_buf_reset(&cdc_rx_rb);
+	cdc_rx_paused = false;
+	uart_irq_rx_enable(usb_dev);
+}
+
+/* Block until exactly len bytes have been pulled from the ring buffer. After
+ * freeing space, re-enable RX in case the ISR disabled it on a full ring
+ * (see cdc_rx_isr -- flow control for sketches larger than the ring). */
+static void cdc_rx_exact(uint8_t *dst, size_t len) {
+	size_t got = 0;
+
+	while (got < len) {
+		uint32_t r = ring_buf_get(&cdc_rx_rb, dst + got, len - got);
+
+		got += r;
+		if (r > 0) {
+			if (cdc_rx_paused) {
+				cdc_rx_paused = false;
+				uart_irq_rx_enable(usb_dev);
+			}
+		} else {
+			k_msleep(2);
+		}
+	}
+}
+
+static void cdc_print(const char *s) {
+	for (; *s != '\0'; s++) {
+		uart_poll_out(usb_dev, (uint8_t)*s);
+	}
+}
+
+/* Receive one framed sketch over CDC and write it to the SD card. */
+static int cdc_recv_sketch(void) {
+	uint8_t hdr[8];
+
+	cdc_rx_exact(hdr, sizeof(hdr));
+	if (memcmp(hdr, UP_MAGIC, 4) != 0) {
+		LOG_ERR("upload: bad magic %02x %02x %02x %02x", hdr[0], hdr[1], hdr[2], hdr[3]);
+		cdc_print("ERR magic\n");
+		return -EINVAL;
+	}
+
+	uint32_t len = sys_get_le32(&hdr[4]);
+
+	LOG_INF("upload: receiving %u bytes -> %s", len, SKETCH_PATH);
+
+	struct fs_file_t f;
+
+	fs_file_t_init(&f);
+	int rc = fs_open(&f, SKETCH_TMP_PATH, FS_O_CREATE | FS_O_WRITE | FS_O_TRUNC);
+
+	if (rc) {
+		LOG_ERR("upload: fs_open(%s) = %d", SKETCH_TMP_PATH, rc);
+		cdc_print("ERR open\n");
+		return rc;
+	}
+
+	uint32_t left = len;
+	uint8_t buf[256];
+
+	while (left > 0) {
+		uint32_t chunk = MIN(left, sizeof(buf));
+
+		cdc_rx_exact(buf, chunk);
+		ssize_t w = fs_write(&f, buf, chunk);
+
+		if (w < 0) {
+			LOG_ERR("upload: fs_write = %d", (int)w);
+			fs_close(&f);
+			(void)fs_unlink(SKETCH_TMP_PATH);
+			cdc_print("ERR write\n");
+			return (int)w;
+		}
+		left -= chunk;
+	}
+
+	fs_close(&f);
+
+	/* The new sketch is fully on disk now; swap it in. Up to here only the
+	 * temp file was touched, so an interrupted receive left the live sketch
+	 * intact. (FATFS fs_rename fails if the target exists -- unlink first.) */
+	(void)fs_unlink(SKETCH_PATH);
+	rc = fs_rename(SKETCH_TMP_PATH, SKETCH_PATH);
+	if (rc) {
+		LOG_ERR("upload: rename %s -> %s = %d", SKETCH_TMP_PATH, SKETCH_PATH, rc);
+		cdc_print("ERR rename\n");
+		return rc;
+	}
+
+	LOG_INF("upload: wrote %u bytes to %s", len, SKETCH_PATH);
+	cdc_print("OK\n");
+	return 0;
+}
+
+/* The loaded sketch runs in its own thread so the loader keeps control to
+ * watch the CDC for the upload touch while the sketch loops forever. */
+static struct llext *cdc_cur_ext;
+static K_THREAD_STACK_DEFINE(cdc_sketch_stack, 16384);
+static struct k_thread cdc_sketch_thread;
+static bool cdc_sketch_active;
+
+static void cdc_sketch_entry(void *entry, void *b, void *c) {
+	ARG_UNUSED(b);
+	ARG_UNUSED(c);
+	llext_bootstrap(cdc_cur_ext, (llext_entry_fn_t)entry, NULL);
+}
+
+/* Load SKETCH_PATH and start it in a thread. */
+static int cdc_start_sketch(void) {
+	struct llext_fs_loader fsl = LLEXT_FS_LOADER(SKETCH_PATH);
+	struct llext_load_param parm = LLEXT_LOAD_PARAM_DEFAULT;
+	int rc = llext_load(&fsl.loader, "sketch", &cdc_cur_ext, &parm);
+
+	if (rc) {
+		LOG_ERR("llext_load(%s) = %d", SKETCH_PATH, rc);
+		cdc_cur_ext = NULL;
+		return rc;
+	}
+
+	void *main_fn = llext_find_sym(&cdc_cur_ext->exp_tab, "main");
+
+	if (main_fn == NULL) {
+		LOG_ERR("sketch has no 'main'");
+		llext_unload(&cdc_cur_ext);
+		cdc_cur_ext = NULL;
+		return -ENOENT;
+	}
+
+	k_thread_create(&cdc_sketch_thread, cdc_sketch_stack,
+			K_THREAD_STACK_SIZEOF(cdc_sketch_stack), cdc_sketch_entry, main_fn,
+			NULL, NULL, CDC_SKETCH_PRIO, 0, K_NO_WAIT);
+	k_thread_name_set(&cdc_sketch_thread, "sketch");
+	cdc_sketch_active = true;
+	LOG_INF("sketch started");
+	return 0;
+}
+
+/* Abort the running sketch and free it -- all in-process, no reboot. */
+static void cdc_stop_sketch(void) {
+	if (cdc_sketch_active) {
+		k_thread_abort(&cdc_sketch_thread);
+		cdc_sketch_active = false;
+	}
+	if (cdc_cur_ext != NULL) {
+		int rc = llext_unload(&cdc_cur_ext);
+
+		LOG_INF("sketch stopped + unloaded (rc %d)", rc);
+		cdc_cur_ext = NULL;
+	}
+}
+
+static uint32_t cdc_baud(void) {
+	uint32_t baud = 0;
+
+	(void)uart_line_ctrl_get(usb_dev, UART_LINE_CTRL_BAUD_RATE, &baud);
+	return baud;
+}
+
+static void cdc_upload_supervisor(void) {
+	if (!device_is_ready(usb_dev)) {
+		LOG_ERR("CDC device not ready");
+		return;
+	}
+
+	/* The loader owns USB bring-up (usb_enable() does usbd_init_device +
+	 * usbd_enable; defined above under ZARD_FIRST_SERIAL_IS_SERIALUSB). */
+	if (usb_enable(NULL) != 0) {
+		LOG_ERR("USB device enable failed");
+		return;
+	}
+
+	/* Hold CDC RX until a sketch's Serial.begin() takes it over, so a first
+	 * upload works on a blank/recovery boot before any sketch runs. */
+	cdc_rx_take();
+
+	LOG_INF("PiZZa CDC loader ready (firmware owns SD; in-process swap, no reboot)");
+
+	k_thread_priority_set(k_current_get(), CDC_SUPERVISOR_PRIO);
+
+	/* Auto-run the sketch already on the SD (POR persistence). */
+	struct fs_dirent ent;
+
+	if (fs_stat(SKETCH_PATH, &ent) == 0) {
+		LOG_INF("auto-loading %s (%u bytes)", SKETCH_PATH, (unsigned int)ent.size);
+		cdc_start_sketch();
+	} else {
+		LOG_INF("no %s yet -- upload one", SKETCH_PATH);
+	}
+
+	/* Watch the CDC for the IDE's 1200-bps "enter upload" touch while the
+	 * sketch loops in its own thread; on the touch, swap in-process. */
+	uint32_t prev = cdc_baud();
+
+	for (;;) {
+		uint32_t baud = cdc_baud();
+
+		if (baud == 1200 && prev != 1200) {
+			LOG_INF("1200-bps touch -> upload mode (in-process swap)");
+			cdc_stop_sketch();
+			cdc_rx_take();
+			if (cdc_recv_sketch() == 0) {
+				cdc_start_sketch();
+			}
+			prev = cdc_baud();
+			continue;
+		}
+		prev = baud;
+		k_msleep(30);
+	}
+}
+#endif /* CONFIG_ARDUINO_SKETCH_LOADER_CDC_UPLOAD */
+
 int main(void) {
+#if defined(CONFIG_ARDUINO_SKETCH_LOADER_CDC_UPLOAD)
+	cdc_upload_supervisor();
+#else
 	loader(NULL);
+#endif
 	return 0;
 }

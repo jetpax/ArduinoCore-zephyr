@@ -15,7 +15,14 @@ const struct device *const usb_dev =
 	DEVICE_DT_GET(DT_PHANDLE_BY_IDX(DT_PATH(zephyr_user), cdc_acm_serial, 0));
 
 void __attribute__((weak)) _on_1200_bps() {
+#ifndef CONFIG_ARDUINO_USB_LOADER_OWNED
+	/* Default behaviour: the 1200-bps touch resets into the bootloader.
+	 * NVIC_SystemReset is a Cortex-M intrinsic; on loader-owned targets
+	 * (e.g. aarch64 BCM2710, which has no such reset) the loader handles
+	 * the upload touch itself, so this path is compiled out -- it would
+	 * neither link nor apply there. */
 	NVIC_SystemReset();
+#endif
 }
 
 void arduino::SerialUSB_::baudChangeHandler(const struct device *dev, uint32_t rate) {
@@ -78,9 +85,13 @@ void arduino::SerialUSB_::begin(unsigned long baudrate, uint16_t config) {
 #else
 		cdc_acm_dte_rate_callback_set(usb_dev, SerialUSB_::baudChangeHandler);
 #endif
-#else
+#elif !defined(CONFIG_ARDUINO_USB_LOADER_OWNED)
 		enable_usb_device_next();
 #endif
+		/* When CONFIG_ARDUINO_USB_LOADER_OWNED, the loader has already
+		 * brought USBD up and registered the upload-touch callback; the
+		 * sketch only needs to attach to the CDC ACM device, which
+		 * ZephyrSerial::begin does (configure + RX-enable). */
 		ZephyrSerial::begin(baudrate, config);
 		started = true;
 	}

@@ -36,3 +36,17 @@ config ARDUINO_SKETCH_LOADER_FS_PATH
 	default "/SD:/sketch.llext"
 	help
 	  Absolute path to the sketch .llext file on the mounted file system.
+
+config ARDUINO_SKETCH_LOADER_CDC_UPLOAD
+	bool "In-process CDC upload + swap (no reboot)"
+	depends on ARDUINO_SKETCH_LOADER_FS && USB_DEVICE_STACK_NEXT && USBD_CDC_ACM_CLASS
+	select RING_BUFFER
+	select UART_LINE_CTRL
+	help
+	  The loader owns USBD/CDC: it brings USB up at boot, runs the sketch in
+	  its own thread, and watches the CDC line for the IDE's 1200-bps upload
+	  touch. On the touch it aborts the sketch, receives a fresh sketch.llext
+	  over CDC, writes it to the (firmware-owned) file system, and starts it
+	  in-process -- no reboot. For SoCs with no sys_reboot, such as the
+	  BCM2710 / Raspberry Pi Zero 2 W. Pairs with CONFIG_ARDUINO_USB_LOADER_OWNED
+	  on the sketch side.
