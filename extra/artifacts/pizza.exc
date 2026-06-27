@@ -12,3 +12,7 @@ libraries/Zephyr_SDRAM/
 libraries/Ethernet/
 libraries/CAN/
 libraries/Arduino_LED_Matrix/
+# No RTC peripheral on this SoC -- there is no rtc node in the bcm2710 DTS, so
+# the RTC library has no device to bind. (CONFIG_RTC is on in the loader's
+# prj.conf but inert without a device.)
+libraries/RTC/
