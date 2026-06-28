@@ -17,6 +17,18 @@
 #endif
 
 #include <zephyr/net/socket.h>
+#if defined(CONFIG_POSIX_API)
+/* Zephyr 4.x moved the un-prefixed BSD/POSIX socket names (socket, recv, send,
+ * bind, accept, AF_INET, struct sockaddr_in, MSG_PEEK, inet_ntop, getaddrinfo,
+ * ...) out of <zephyr/net/socket.h> -- CONFIG_NET_SOCKETS_POSIX_NAMES was
+ * removed -- into the POSIX headers, which CONFIG_POSIX_API puts on the include
+ * path. This library uses those un-prefixed names throughout. */
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <unistd.h>  /* close() */
+#endif
 #include <memory>
 #include <cstring>
 
