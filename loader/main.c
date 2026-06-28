@@ -13,6 +13,7 @@ LOG_MODULE_REGISTER(sketch);
 #include <zephyr/shell/shell.h>
 #include <zephyr/shell/shell_uart.h>
 #include <zephyr/logging/log_ctrl.h>
+#include <zephyr/fatal.h>
 
 #include <stdlib.h>
 #include <zephyr/drivers/gpio.h>
@@ -574,6 +575,29 @@ static struct llext *cdc_cur_ext;
 static K_THREAD_STACK_DEFINE(cdc_sketch_stack, 16384);
 static struct k_thread cdc_sketch_thread;
 static bool cdc_sketch_active;
+
+/* Fault isolation: the sketch is untrusted code. If it -- or the kernel acting
+ * on its behalf -- faults, abort just the sketch thread and fall back to the
+ * upload supervisor instead of halting the whole board. z_fatal_error() kills
+ * the faulting thread once this handler returns; the sketch thread is
+ * non-essential and this is a UP build (CONFIG_MP_MAX_NUM_CPUS=1), so any
+ * spinlock the fault was holding is only an IRQ-lock that releases across the
+ * context switch back to the (main) supervisor thread. A fault in any *loader*
+ * thread is a real bug -> halt, as the default handler would. This turns a
+ * bad / stale / ABI-mismatched sketch from a hard brick into "upload one". */
+void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *esf)
+{
+	ARG_UNUSED(esf);
+
+	if (cdc_sketch_active && k_current_get() == &cdc_sketch_thread) {
+		cdc_sketch_active = false;
+		LOG_ERR("sketch faulted (err %u) -- aborted; back to upload mode", reason);
+		return;
+	}
+
+	LOG_ERR("fatal error (err %u) in the loader -- halting", reason);
+	k_fatal_halt(reason);
+}
 
 static void cdc_sketch_entry(void *entry, void *b, void *c) {
 	ARG_UNUSED(b);
