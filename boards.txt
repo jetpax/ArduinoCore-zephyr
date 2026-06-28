@@ -687,6 +687,13 @@ pizza.build.artifact=pizza
 pizza.build.board=PIZZA
 pizza.build.zephyr_toolchain=aarch64-zephyr-elf
 
+# IDE machine fields -- previously emitted into the auto-generated boards.local.txt
+# at package time; kept in source so they survive dist-build (which regenerates
+# boards.local.txt header-only). mcu = IDE display/recipe hint; maximum_data_size
+# = the IDE RAM-usage cap (1 MiB, the loader's llext heap).
+pizza.build.mcu=cortex-a53
+pizza.upload.maximum_data_size=1048576
+
 # No USB DFU on this target -- the Pi boots from SD. The sketch is the raw
 # relocatable ELF (not the upstream Arduino header-wrapped variant), since
 # the PiZZA loader's fs_loader path consumes a stock ELF/llext file directly.
