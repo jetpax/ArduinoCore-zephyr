@@ -278,17 +278,42 @@ def main():
             # TCB is 2 pointers: 8 bytes on 32-bit, 16 bytes on 64-bit.
             # See zephyr/arch/arm/core/tls.c: arch_tls_stack_setup().
             tcb_size = (elf.elfclass // 8) * 2
-            print(f"/* Offsets include {tcb_size} bytes for TCB data */")
 
-            # Sort by offset first, then size
-            for name, offset, size in sorted(tls_syms, key=lambda x: (x[1], x[2])):
-                offset += tcb_size
-                print(
-                    f"\n/* TLS offset {offset:#x}: {name} ({size} bytes) */\n"
-                    f".global {name}\n"
-                    f".type {name}, {prefix}tls_object\n"
-                    f".set {name}, {offset}"
-                )
+            # Emit the loader's TLS symbols as a REAL .tbss section, NOT as
+            # absolute (.set) values. ld cannot satisfy a TLS local-exec
+            # relocation (R_AARCH64_TLSLE_* / R_ARM_TLS_LE32) against an SHN_ABS
+            # symbol, so the moment a sketch actually references one of these
+            # (e.g. errno in the WiFi/Net socket error path) an absolute .set
+            # fails the link with "dangerous relocation: unsupported relocation".
+            # Placing each symbol at its loader TLS-block offset in .tbss gives it
+            # a real tpoff that matches the loader's per-thread slot, so the
+            # link-time-baked TP+offset access lands on the running thread's
+            # instance of the variable. _TLS_MODULE_BASE_ is omitted: once a
+            # .tbss exists the linker defines that anchor itself, and an explicit
+            # definition would be a multiple definition.
+            syms = sorted(
+                (offset, size, name)
+                for name, offset, size in tls_syms
+                if name != '_TLS_MODULE_BASE_'
+            )
+            if syms:
+                print(f"\n/* tpoffs include {tcb_size} bytes for TCB data */")
+                print(f'.section .tbss,"awT",{prefix}nobits')
+                print(".balign 8")
+                cur = 0
+                for offset, size, name in syms:
+                    if offset > cur:
+                        print(f".zero {offset - cur}")
+                        cur = offset
+                    print(
+                        f"/* tpoff {offset + tcb_size:#x}: {name} ({size} bytes) */\n"
+                        f".global {name}\n"
+                        f".type {name}, {prefix}tls_object\n"
+                        f"{name}:"
+                    )
+                    if size > 0:
+                        print(f".zero {size}")
+                        cur += size
 
 #-------------------------------------------------------------------------------
 if __name__ == '__main__':
