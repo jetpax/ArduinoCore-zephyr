@@ -36,6 +36,10 @@ LOG_MODULE_REGISTER(sketch);
 #include <zephyr/devicetree/fixed-partitions.h>
 #endif
 
+#if defined(CONFIG_REBOOT)
+#include <zephyr/sys/reboot.h>
+#endif
+
 #define HEADER_LEN 16
 
 struct sketch_header_v1 {
@@ -635,7 +639,15 @@ static int cdc_start_sketch(void) {
 	return 0;
 }
 
-/* Abort the running sketch and free it -- all in-process, no reboot. */
+/* Abort the running sketch and free it -- in-process, no reboot.
+ * Used on a clean shutdown (e.g. fault from the running sketch).
+ *
+ * For the sketch-SWAP path the supervisor calls sys_reboot() after
+ * receiving the new sketch — that gives every new sketch a cold-booted
+ * kernel and eliminates state contamination (brcmfmac/netif/k_work/
+ * GPIO ISRs/etc.) that an in-process swap would otherwise inherit
+ * from the previous sketch's run.
+ */
 static void cdc_stop_sketch(void) {
 	if (cdc_sketch_active) {
 		k_thread_abort(&cdc_sketch_thread);
@@ -689,22 +701,52 @@ static void cdc_upload_supervisor(void) {
 
 	/* Watch the CDC for the IDE's 1200-bps "enter upload" touch while the
 	 * sketch loops in its own thread; on the touch, swap in-process. */
+
+	/* DIAG: discriminator log for the 1200-bps-touch hang after a WiFi
+	 * sketch. Fires only on interesting events to keep the UART readable:
+	 *   - baud != prev   : touch caught (or any line-coding change)
+	 *   - gap > 60 ms    : supervisor was preempted (priority inversion vs
+	 *                      brcmfmac RX prio 4) — steady-state is ~30 ms
+	 *   - rd  >  3 ms    : uart_line_ctrl_get / DTR-read stalled
+	 * Remove once a real fix lands. */
 	uint32_t prev = cdc_baud();
+	uint32_t last_t = k_uptime_get_32();
 
 	for (;;) {
+		uint32_t t0 = k_uptime_get_32();
 		uint32_t baud = cdc_baud();
+		uint32_t t1 = k_uptime_get_32();
+		uint32_t rd = t1 - t0;
+		uint32_t gap = t0 - last_t;
+
+		if (baud != prev || gap > 60 || rd > 3) {
+			LOG_INF("sup t=%u baud=%u prev=%u rd=%u gap=%u",
+				t1, baud, prev, rd, gap);
+		}
 
 		if (baud == 1200 && prev != 1200) {
-			LOG_INF("1200-bps touch -> upload mode (in-process swap)");
+			LOG_INF("1200-bps touch -> upload mode");
 			cdc_stop_sketch();
 			cdc_rx_take();
 			if (cdc_recv_sketch() == 0) {
+#if defined(CONFIG_REBOOT)
+				/* Let the host's "OK\n" reply finish hitting
+				 * the wire before we yank USB out from under
+				 * it on the cold reset. */
+				k_msleep(150);
+				LOG_INF("rebooting to load new sketch");
+				sys_reboot(SYS_REBOOT_COLD);
+				/* unreachable */
+#else
 				cdc_start_sketch();
+#endif
 			}
 			prev = cdc_baud();
+			last_t = k_uptime_get_32();
 			continue;
 		}
 		prev = baud;
+		last_t = k_uptime_get_32();
 		k_msleep(30);
 	}
 }
