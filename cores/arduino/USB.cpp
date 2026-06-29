@@ -103,16 +103,16 @@ arduino::SerialUSB_::operator bool() {
 }
 
 size_t arduino::SerialUSB_::write(const uint8_t *buffer, size_t size) {
-	if (!Serial) {
-		return 0;
-	}
+	/* No DTR gate: the cdc_acm driver handles host-not-listening on its
+	 * own (TX FIFO buffers, eventual NAK). Gating here means Arduino
+	 * IDE Serial Monitor on macOS — which doesn't always raise DTR —
+	 * sees zero echo from sketches like HelloSerial. operator bool()
+	 * still reports DTR so sketches that want "wait for host" can do
+	 * `while (!Serial);` explicitly. */
 	return arduino::ZephyrSerial::write(buffer, size);
 }
 
 void arduino::SerialUSB_::flush() {
-	if (!Serial) {
-		return;
-	}
 	arduino::ZephyrSerial::flush();
 }
 
