@@ -1,0 +1,154 @@
+/*
+ * Copyright (c) 2026 Jonathan Elliot Peace <jep@alphabetiq.com>
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Arduino variant overlay for the Raspberry Pi Zero W (BCM2835,
+ * ARM1176JZF-S, ARMv6KZ, AArch32). v1 scope is Blink + USB-CDC Serial.
+ * SPI/Wire/SD/WiFi nodes are intentionally omitted until those bring-ups
+ * land on ARMv6.
+ *
+ * Sketches load from a FAT file on the SD card via Zephyr's fs llext
+ * loader -- there is no internal flash and no `user_sketch` partition.
+ */
+
+#include <zephyr/dt-bindings/gpio/gpio.h>
+
+/* VideoCore mailbox + firmware: the USB PHY on this SoC is powered on
+ * via a VC SET_POWER_STATE mailbox call, so both must be enabled before
+ * the dwc2 controller can enumerate.
+ */
+&mbox0 {
+	status = "okay";
+};
+
+&firmware {
+	status = "okay";
+};
+
+/* USB device controller (snps,dwc2). The bcm2835 dtsi labels this node
+ * both `usb` and `zephyr_udc0`; the Arduino core binds its single USBD
+ * context to DT_NODELABEL(zephyr_udc0). The CDC ACM child is the board's
+ * `Serial` -- the loader owns USB bring-up and the upload channel.
+ */
+&zephyr_udc0 {
+	status = "okay";
+
+	board_cdc_acm_uart: board_cdc_acm_uart {
+		compatible = "zephyr,cdc-acm-uart";
+	};
+};
+
+/* Legacy SDHost controller -> external microSD card slot. ALT0 mux on
+ * GPIO 48..53 via the sdhost_gpio48 group (bcm283x-pinctrl.dtsi). The
+ * Phase-3b 2026-05-29 attempt initialised the controller cleanly but
+ * the card never enumerated (no CMD8 log, FATFS automount -ENODEV) --
+ * needs instrumentation on the polled-PIO command path.
+ */
+&sdhost {
+	pinctrl-names = "default";
+	pinctrl-0 = <&sdhost_gpio48>;
+	status = "okay";
+
+	sdmmc {
+		compatible = "zephyr,sdmmc-disk";
+		disk-name = "SD";
+	};
+};
+
+/* bcm2835.dtsi has gpio1 status="disabled" by default and ngpios=18
+ * (covers GPIOs 28..45). The Pi Zero W's on-board ACT LED is on BCM
+ * GPIO 47, so enable the bank AND extend it to cover 28..53. When this
+ * lands upstream, drop this stanza.
+ */
+&gpio1 {
+	status = "okay";
+	ngpios = <26>;
+};
+
+/ {
+	fstab {
+		compatible = "zephyr,fstab";
+
+		sd: sd {
+			compatible = "zephyr,fstab,fatfs";
+			disk-access;
+			automount;
+			mount-point = "/SD:";
+		};
+	};
+
+	zephyr,user {
+		/*
+		 * Arduino digital pin map for the Pi 40-pin header. Matches
+		 * the rpi_zero_2w variant so sketches port unchanged:
+		 *
+		 *   D0  = GPIO 15  (UART1 RX)         header pin 10
+		 *   D1  = GPIO 14  (UART1 TX)         header pin 8
+		 *   D2  = GPIO  4                     header pin 7
+		 *   D3  = GPIO 17                     header pin 11
+		 *   D4  = GPIO 27                     header pin 13
+		 *   D5  = GPIO 22                     header pin 15
+		 *   D6  = GPIO  5                     header pin 29
+		 *   D7  = GPIO  6                     header pin 31
+		 *   D8  = GPIO 23                     header pin 16
+		 *   D9  = GPIO 24                     header pin 18
+		 *   D10 = GPIO  8  (SPI0 CE0)         header pin 24
+		 *   D11 = GPIO 10  (SPI0 MOSI)        header pin 19
+		 *   D12 = GPIO  9  (SPI0 MISO)        header pin 21
+		 *   D13 = GPIO 11  (SPI0 SCLK)        header pin 23
+		 *   D14 = GPIO 47  (on-board ACT LED) no header pin
+		 *
+		 * D14 isn't on the 40-pin header -- it's the green on-board
+		 * activity LED. The original Pi Zero W uses GPIO 47 (vs the
+		 * Pi 3 family / Zero 2 W convention of GPIO 29). We expose it
+		 * as the Arduino BUILTIN LED so the standard Blink sketch
+		 * (`digitalWrite(LED_BUILTIN, ...)`) blinks the on-board LED
+		 * without requiring an external jumper to D13.
+		 * ArduinoCore-zephyr's `LED_BUILTIN` macro
+		 * (cores/arduino/Arduino.h:54-67) finds the matching entry in
+		 * `digital-pin-gpios` and returns its index -- so
+		 * `LED_BUILTIN` resolves to `14`.
+		 */
+		digital-pin-gpios = <&gpio0 15 0>,
+				    <&gpio0 14 0>,
+				    <&gpio0  4 0>,
+				    <&gpio0 17 0>,
+				    <&gpio0 27 0>,
+				    <&gpio0 22 0>,
+				    <&gpio0  5 0>,
+				    <&gpio0  6 0>,
+				    <&gpio0 23 0>,
+				    <&gpio0 24 0>,
+				    <&gpio0  8 0>,
+				    <&gpio0 10 0>,
+				    <&gpio0  9 0>,
+				    <&gpio0 11 0>,
+				    <&gpio1 19 0>;
+
+		/* On-board ACT LED -- BCM GPIO 47, ACTIVE_HIGH. */
+		builtin-led-gpios = <&gpio1 19 GPIO_ACTIVE_HIGH>;
+
+		/*
+		 * `Serial` is the USB CDC ACM device (matching every other
+		 * Arduino USB board): it carries both the sketch's serial I/O
+		 * and the upload channel. The presence of `cdc-acm-serial`
+		 * makes ArduinoCore's ZARD_FIRST_SERIAL_IS_SERIALUSB true, so
+		 * `Serial` is a SerialUSB_ on this node.
+		 *
+		 * The board's mini-UART (uart1 @ GPIO 14/15, 115200) drops to
+		 * `Serial1` and remains the console + LOG_* backend (chosen
+		 * zephyr,console in the board DTS).
+		 */
+		cdc-acm-serial = <&board_cdc_acm_uart>;
+		serials = <&uart1>;
+
+		/*
+		 * No ADC on this SoC -> `analogRead` is unavailable; no
+		 * `adc-pin-gpios` / `io-channels` nodes by design. No PWM
+		 * driver bound yet -> `analogWrite` unavailable. No Wire/SPI
+		 * bindings in v1 -- the BCM283x i2c/spi driver ports for
+		 * AArch32 ARMv6 are pending.
+		 */
+	};
+};
