@@ -761,3 +761,94 @@ pizza.menu.upload_method.sdreader.upload.sdfat.mount.linux=/media/{user}/RECOVER
 pizza.menu.upload_method.sdreader.upload.sdfat.mount.windows=E:
 
 ##############################################################################################################
+
+# PiZZa -- Raspberry Pi Zero W (BCM2835, ARM1176JZF-S, ARMv6KZ, AArch32).
+# v1 scope is Blink + USB-CDC Serial. WiFi/SPI/I2C/SD-driver bring-up is
+# tracked separately; the variant .conf bakes the SD-FAT config in so the
+# loader's auto-load path picks up /SD:/sketch.llext as soon as the BCM2835
+# SDHost driver enumerates.
+pizza_zero_w.name=PiZZa (Raspberry Pi Zero W)
+pizza_zero_w.build.core=arduino
+pizza_zero_w.build.crossprefix=arm-zephyr-eabi-
+# Until the arm-zephyr-eabi toolchain ships as an Arduino-packaged tool,
+# the developer needs a symlink at
+#   ~/Library/Arduino15/packages/arduino-git/tools/arm-zephyr-eabi/0.17.0
+# pointing to their local Zephyr SDK (`~/zephyr-sdk-1.0.1/gnu/arm-zephyr-eabi`).
+pizza_zero_w.build.compiler_path={runtime.tools.arm-zephyr-eabi-0.17.0.path}/bin/
+
+# Override platform.txt's link_command to drop --specs=nano.specs /nosys.specs:
+# the arm-zephyr-eabi toolchain ships picolibc (not newlib-nano), so those
+# spec files don't exist. The relocatable-ELF link doesn't need picolibc.specs
+# either -- nothing needs the startup-file or syscall stubs at link time.
+pizza_zero_w.build.link_command="{compiler.path}{compiler.c.elf.cmd}" "-L{build.path}" "-L{build.variant.path}" {compiler.c.elf.flags} {compiler.c.elf.extra_flags} {build.extra_flags} {build.extra_ldflags} {compiler.zephyr.common_ldflags} {compiler.ldflags} {object_files} -Wl,--start-group "{build.path}/{archive_file}" {compiler.zephyr.extra_ldflags} {compiler.libraries.ldflags} -Wl,--end-group {build.link_args.{build.link_mode}}
+
+pizza_zero_w.build.zephyr_target=rpi_zero_w/bcm2835
+pizza_zero_w.build.zephyr_args=-DTOOLCHAIN_HAS_GLIBCXX=ON
+pizza_zero_w.build.zephyr_hals=hal_broadcom
+pizza_zero_w.build.variant=rpi_zero_w_bcm2835
+pizza_zero_w.build.artifact=pizza
+pizza_zero_w.build.board=PIZZA_ZERO_W
+pizza_zero_w.build.zephyr_toolchain=arm-zephyr-eabi
+
+# IDE machine fields -- previously emitted into the auto-generated boards.local.txt
+# at package time; kept in source so they survive dist-build.
+pizza_zero_w.build.mcu=arm1176jzf-s
+pizza_zero_w.upload.maximum_data_size=1048576
+
+# No USB DFU on this target -- the Pi boots from SD. The sketch is the raw
+# relocatable ELF.
+pizza_zero_w.upload.extension=elf
+
+# Skip the zephyr-sketch-tool header-wrap hooks.
+pizza_zero_w.recipe.hooks.objcopy.postobjcopy.1.pattern=
+pizza_zero_w.recipe.hooks.objcopy.postobjcopy.2.pattern=
+
+# Skip the zephyr-check-size step.
+pizza_zero_w.recipe.size.pattern=
+
+# Skip the gen-rodata-ld multi-pass rodata split. CONFIG_LLEXT_RODATA_NO_RELOC=n
+# in the variant .conf (VMSAv6 MMU is always on); replace the second-pass link.
+pizza_zero_w.recipe.c.combine.3.pattern=
+pizza_zero_w.recipe.c.combine.4.pattern={build.link_command} {build.link_args.build-{build.link_mode}} {build.link_args.build-common}
+
+# Two upload methods, selectable via Tools -> Upload method:
+#
+#   "USB (CDC)"      [default] -- single-cable upload to the running loader.
+#                    The cdcupload tool does the 1200-bps touch itself and
+#                    streams the sketch over CDC; the loader writes
+#                    /SD:/sketch.llext and sys_reboot()s. See platform.txt
+#                    tools.cdcupload + tools/cdc-upload/cdc-upload.py.
+#   "SD card reader" -- legacy flow: copy the .llext onto the FAT partition
+#                    mounted at /Volumes/RECOVERY (PINN convention) and eject;
+#                    for headless / no-USB-host use.
+pizza_zero_w.upload.protocol=
+pizza_zero_w.upload.transport=
+pizza_zero_w.upload.tool=cdcupload
+pizza_zero_w.upload.tool.default=cdcupload
+pizza_zero_w.upload.native_usb=true
+pizza_zero_w.upload.use_1200bps_touch=false
+pizza_zero_w.upload.wait_for_upload_port=false
+pizza_zero_w.upload.sdfat.mount=/Volumes/RECOVERY
+pizza_zero_w.upload.sdfat.mount.macosx=/Volumes/RECOVERY
+pizza_zero_w.upload.sdfat.mount.linux=/media/{user}/RECOVERY
+pizza_zero_w.upload.sdfat.mount.windows=E:
+
+pizza_zero_w.menu.upload_method.usbcdc=USB (CDC)
+pizza_zero_w.menu.upload_method.usbcdc.upload.tool=cdcupload
+pizza_zero_w.menu.upload_method.usbcdc.upload.tool.default=cdcupload
+pizza_zero_w.menu.upload_method.usbcdc.upload.native_usb=true
+pizza_zero_w.menu.upload_method.usbcdc.upload.use_1200bps_touch=false
+pizza_zero_w.menu.upload_method.usbcdc.upload.wait_for_upload_port=false
+
+pizza_zero_w.menu.upload_method.sdreader=SD card reader
+pizza_zero_w.menu.upload_method.sdreader.upload.tool=sdfat
+pizza_zero_w.menu.upload_method.sdreader.upload.tool.default=sdfat
+pizza_zero_w.menu.upload_method.sdreader.upload.native_usb=false
+pizza_zero_w.menu.upload_method.sdreader.upload.use_1200bps_touch=false
+pizza_zero_w.menu.upload_method.sdreader.upload.wait_for_upload_port=false
+pizza_zero_w.menu.upload_method.sdreader.upload.sdfat.mount=/Volumes/RECOVERY
+pizza_zero_w.menu.upload_method.sdreader.upload.sdfat.mount.macosx=/Volumes/RECOVERY
+pizza_zero_w.menu.upload_method.sdreader.upload.sdfat.mount.linux=/media/{user}/RECOVERY
+pizza_zero_w.menu.upload_method.sdreader.upload.sdfat.mount.windows=E:
+
+##############################################################################################################
