@@ -667,11 +667,9 @@ unoq.bootloader.target=stm32u585zitxq
 pizza.name=PiZZA (Raspberry Pi Zero 2 W)
 pizza.build.core=arduino
 pizza.build.crossprefix=aarch64-zephyr-elf-
-# Until the aarch64-zephyr-elf toolchain ships as an Arduino-packaged tool,
-# the developer needs a symlink at
-#   ~/Library/Arduino15/packages/arduino-git/tools/aarch64-zephyr-elf/0.17.0
-# pointing to their local Zephyr SDK (`~/zephyr-sdk/aarch64-zephyr-elf`).
-pizza.build.compiler_path={runtime.tools.aarch64-zephyr-elf-0.17.0.path}/bin/
+# Zephyr SDK 1.0.1 toolchain, installed by Boards Manager as the
+# pizza-packaged aarch64-zephyr-elf tool (see package_pizza_index.json).
+pizza.build.compiler_path={runtime.tools.aarch64-zephyr-elf-1.0.1.path}/bin/
 
 # Override platform.txt's link_command to drop --specs=nano.specs /nosys.specs:
 # the aarch64-zephyr-elf toolchain ships picolibc (not newlib-nano), so those
@@ -770,11 +768,9 @@ pizza.menu.upload_method.sdreader.upload.sdfat.mount.windows=E:
 pizza_zero_w.name=PiZZa (Raspberry Pi Zero W)
 pizza_zero_w.build.core=arduino
 pizza_zero_w.build.crossprefix=arm-zephyr-eabi-
-# Until the arm-zephyr-eabi toolchain ships as an Arduino-packaged tool,
-# the developer needs a symlink at
-#   ~/Library/Arduino15/packages/arduino-git/tools/arm-zephyr-eabi/0.17.0
-# pointing to their local Zephyr SDK (`~/zephyr-sdk-1.0.1/gnu/arm-zephyr-eabi`).
-pizza_zero_w.build.compiler_path={runtime.tools.arm-zephyr-eabi-0.17.0.path}/bin/
+# Zephyr SDK 1.0.1 toolchain, installed by Boards Manager as the
+# pizza-packaged arm-zephyr-eabi tool (see package_pizza_index.json).
+pizza_zero_w.build.compiler_path={runtime.tools.arm-zephyr-eabi-1.0.1.path}/bin/
 
 # Override platform.txt's link_command to drop --specs=nano.specs /nosys.specs:
 # the arm-zephyr-eabi toolchain ships picolibc (not newlib-nano), so those
