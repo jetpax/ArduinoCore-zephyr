@@ -9,12 +9,17 @@
     {
       "packager": "pizza",
       "name": "aarch64-zephyr-elf",
-      "version": "0.17.0"
+      "version": "1.0.1"
     },
     {
       "packager": "pizza",
       "name": "arm-zephyr-eabi",
-      "version": "0.17.0"
+      "version": "1.0.1"
+    },
+    {
+      "packager": "pizza",
+      "name": "cdc-upload",
+      "version": "1.0.0"
     }
   ]
 }
