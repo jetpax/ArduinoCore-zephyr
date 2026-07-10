@@ -4,15 +4,16 @@
 # Files listed here will not be installed with this artifact.
 # This file has precedence over inclusion.
 
-# No backing drivers wired in the rpi_zero_2w_bcm2710 variant overlay.
-# (WiFi is kept -- the brcmfmac driver works on this board.)
+# No backing drivers wired in either variant overlay (rpi_zero_2w_bcm2710 or
+# rpi_zero_w_bcm2835).
+# (WiFi is kept for the 2W -- brcmfmac works; on the Zero W it will fail to
+# compile until the BCM43430a1 firmware + Arasan SDHCI DT nodes are wired.)
 libraries/Camera/
 libraries/Storage/
 libraries/Zephyr_SDRAM/
 libraries/Ethernet/
 libraries/CAN/
 libraries/Arduino_LED_Matrix/
-# No RTC peripheral on this SoC -- there is no rtc node in the bcm2710 DTS, so
-# the RTC library has no device to bind. (CONFIG_RTC is on in the loader's
-# prj.conf but inert without a device.)
+# No RTC peripheral on either SoC -- there's no rtc node in the bcm2710 or
+# bcm2835 DTS, so the RTC library has no device to bind.
 libraries/RTC/

@@ -74,12 +74,26 @@
  * The naked trampoline uses r12 (ip, AAPCS inter-procedure scratch register)
  * which is never an argument register, so r0–r3 and d0–d7 are untouched.
  */
+#if __ARM_ARCH >= 7
 #define VN(name)                                                                                   \
 	__attribute__((naked)) void name(void) {                                                       \
 		__asm__("movw r12, #:lower16:__real_" #name "\n\t"                                         \
 				"movt r12, #:upper16:__real_" #name "\n\t"                                         \
 				"bx   r12");                                                                       \
 	}
+#else
+/*
+ * ARMv6 (ARM1176JZF-S, Pi Zero W) has no movw/movt. Load the target
+ * address from an inline literal pool right after the branch.
+ */
+#define VN(name)                                                                                   \
+	__attribute__((naked)) void name(void) {                                                       \
+		__asm__("ldr  r12, 1f\n\t"                                                                 \
+				"bx   r12\n\t"                                                                     \
+				".align 2\n"                                                                       \
+				"1: .word __real_" #name);                                                         \
+	}
+#endif
 #endif
 
 /* string.h */

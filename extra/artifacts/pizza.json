@@ -1,5 +1,5 @@
 {
-  "name": "PiZZA Boards (Arduino on Zephyr)",
+  "name": "PiZZA Boards (Pi Zero on Zephyr with Arduino)",
   "architecture": "zephyr",
   "category": "Contributed",
   "help": {
@@ -9,6 +9,11 @@
     {
       "packager": "pizza",
       "name": "aarch64-zephyr-elf",
+      "version": "0.17.0"
+    },
+    {
+      "packager": "pizza",
+      "name": "arm-zephyr-eabi",
       "version": "0.17.0"
     }
   ]
