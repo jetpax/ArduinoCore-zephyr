@@ -11,6 +11,7 @@
  */
 
 #include <zephyr/dt-bindings/gpio/gpio.h>
+#include <zephyr/dt-bindings/pwm/pwm.h>
 
 /* SPI0 full bus on GPIO 9 (MISO), 10 (MOSI), 11 (SCLK), with CE0 on
  * GPIO 8 driven as a GPIO chip-select. The board DTS enables `&spi0`
@@ -49,6 +50,27 @@
 	};
 };
 
+/* BCM283x PWM block -- channel 0 on GPIO 12 (header pin 32), channel 1
+ * on GPIO 13 (header pin 33), both ALT0: the conflict-free pair (no
+ * overlap with I2S, analog/HDMI audio, the UART console or the ACT
+ * LED). Deferred init + the "arduino" pinctrl state follow the
+ * upstream giga convention: the core's analogWrite() calls
+ * device_init() on first use and muxes just the one channel's pin
+ * back to PWM after any digitalWrite() flipped it to GPIO.
+ */
+&pwm0 {
+	status = "okay";
+	zephyr,deferred-init;
+	/* Single "arduino" state, no "default": the BCM pinctrl takes
+	 * exactly ONE group phandle per state, and the driver skips a
+	 * missing default (-ENOENT tolerated), so nothing muxes until
+	 * the first analogWrite(). pwm_gpio12's pin order (GPIO 12,
+	 * GPIO 13) is the per-channel index the core uses.
+	 */
+	pinctrl-0 = <&pwm_gpio12>;
+	pinctrl-names = "arduino";
+};
+
 / {
 	fstab {
 		compatible = "zephyr,fstab";
@@ -82,6 +104,8 @@
 		 *   D12 = GPIO  9  (SPI0 MISO)        header pin 21
 		 *   D13 = GPIO 11  (SPI0 SCLK)        header pin 23
 		 *   D14 = GPIO 29  (on-board ACT LED) no header pin
+		 *   D15 = GPIO 12  (PWM0)             header pin 32
+		 *   D16 = GPIO 13  (PWM1)             header pin 33
 		 *
 		 * D14 isn't on the 40-pin header -- it's the green on-board
 		 * activity LED. The Pi Zero 2 W uses the Pi 3 family's
@@ -115,7 +139,9 @@
 				    <&gpio0 10 0>,
 				    <&gpio0  9 0>,
 				    <&gpio0 11 0>,
-				    <&gpio1  1 0>;
+				    <&gpio1  1 0>,
+				    <&gpio0 12 0>,
+				    <&gpio0 13 0>;
 
 		/* On-board ACT LED -- BCM GPIO 29, ACTIVE_HIGH. */
 		builtin-led-gpios = <&gpio1 1 GPIO_ACTIVE_HIGH>;
@@ -142,10 +168,22 @@
 		spis = <&spi0>;
 
 		/*
+		 * Hardware PWM: analogWrite() works on D15 (GPIO 12) and
+		 * D16 (GPIO 13) -- the BCM283x PWM block only reaches
+		 * those two header pins (see &pwm0 above). The 490 Hz
+		 * period matches the Arduino Uno's analogWrite frequency.
+		 * On every other pin analogWrite() falls back to the
+		 * upstream digital threshold behaviour (>= half scale ->
+		 * HIGH). The pwms entry order pairs with the "arduino"
+		 * pinctrl state's pin order in &pwm0.
+		 */
+		pwms = <&pwm0 0 PWM_HZ(490) PWM_POLARITY_NORMAL>,
+		       <&pwm0 1 PWM_HZ(490) PWM_POLARITY_NORMAL>;
+		pwm-pin-gpios = <&gpio0 12 0>, <&gpio0 13 0>;
+
+		/*
 		 * No ADC on this SoC -> `analogRead` is unavailable; no
 		 * `adc-pin-gpios` / `io-channels` nodes by design.
-		 * No PWM driver bound yet -> `analogWrite` unavailable;
-		 * no `pwm-pin-gpios` / `pwms` nodes by design.
 		 */
 	};
 };

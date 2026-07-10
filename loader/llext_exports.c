@@ -137,6 +137,15 @@ EXPORT_SYMBOL(pinctrl_lookup_state);
 EXPORT_SYMBOL(pinctrl_configure_pins);
 #endif
 
+/* The zephyrPinctrl.cpp deferred-init path (analogWrite et al.) calls
+ * device_is_ready()/device_init(), and zephyrSerial.h's HWSerial
+ * teardown calls device_deinit(); with USERSPACE=n those are inline
+ * wrappers around the z_impl_* functions, which live in the kernel.
+ */
+EXPORT_SYMBOL(z_impl_device_init);
+EXPORT_SYMBOL(z_impl_device_is_ready);
+EXPORT_SYMBOL(z_impl_device_deinit);
+
 #if defined(CONFIG_USB_DEVICE_STACK)
 EXPORT_SYMBOL(usb_enable);
 EXPORT_SYMBOL(usb_disable);
