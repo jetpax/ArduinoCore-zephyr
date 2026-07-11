@@ -94,6 +94,18 @@ for f in $(ls extra/artifacts/*.only | grep -v "$ARTIFACT.only") ; do
 	declutter_file $f >> ${TEMP_EXC}
 done
 
+# cores/arduino/api is a symlink to modules/lib/ArduinoCore-API/api/ (the flat
+# API headers). tar -cjhf follows the symlink; if the workspace resolves it to
+# the *outer* ArduinoCore-API repo (containing .git/, test/, and a nested api/
+# subdir with the actual headers), the archive ships that outer tree and every
+# installed core fails at #include <api/ArduinoAPI.h>. This regressed silently
+# at v0.6.0. Fail fast so we never publish that layout again.
+api_target=$(readlink -f cores/arduino/api 2>/dev/null || true)
+if [ ! -f "${api_target}/ArduinoAPI.h" ] || [ -e "${api_target}/test" ] || [ -e "${api_target}/.git" ]; then
+	log_msg error "cores/arduino/api resolves to '${api_target}', which is not the flat ArduinoCore-API/api/ headers directory. Expected ArduinoAPI.h at the top and no test/ or .git/. Fix your workspace (e.g. run 'west update' so modules/lib/ArduinoCore-API is a clean checkout of arduino/ArduinoCore-API) before re-packaging."
+	exit 4
+fi
+
 mkdir -p $(dirname ${OUTPUT_FILE})
 tar -cjhf ${OUTPUT_FILE} -X ${TEMP_EXC} -T ${TEMP_INC} \
 	--transform "s,${TEMP_BOARDS},boards.txt," \
