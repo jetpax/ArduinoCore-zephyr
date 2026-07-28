@@ -146,6 +146,13 @@ EXPORT_SYMBOL(z_impl_device_init);
 EXPORT_SYMBOL(z_impl_device_is_ready);
 EXPORT_SYMBOL(z_impl_device_deinit);
 
+/* The I2S library backs i2s_configure() with a sketch-owned mem slab.
+ * k_mem_slab_init is a plain kernel function, not a syscall, so the
+ * SYSCALL export group doesn't cover it (the i2s_buf_read/write
+ * syscalls it pairs with are auto-exported by that group).
+ */
+EXPORT_SYMBOL(k_mem_slab_init);
+
 #if defined(CONFIG_USB_DEVICE_STACK)
 EXPORT_SYMBOL(usb_enable);
 EXPORT_SYMBOL(usb_disable);

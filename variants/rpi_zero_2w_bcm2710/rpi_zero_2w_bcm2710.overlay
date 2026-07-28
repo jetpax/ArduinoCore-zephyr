@@ -71,6 +71,20 @@
 	pinctrl-names = "arduino";
 };
 
+/* BCM283x PCM / I2S block on GPIO 18 (BCK), 19 (LRCK), 20 (DIN),
+ * 21 (DOUT), all ALT0 -- header pins 12/35/38/40. Unlike PWM there is
+ * no per-channel pin dance (none of these GPIOs are in the digital pin
+ * map), so a plain deferred "default" state suffices: nothing muxes at
+ * boot, and the driver init applies it when the sketch's first
+ * I2S.begin() runs device_init().
+ */
+&i2s {
+	status = "okay";
+	zephyr,deferred-init;
+	pinctrl-0 = <&i2s_gpio18>;
+	pinctrl-names = "default";
+};
+
 / {
 	fstab {
 		compatible = "zephyr,fstab";
@@ -166,6 +180,9 @@
 
 		/* SPI = SPI0 full bus, see &spi0 above. */
 		spis = <&spi0>;
+
+		/* I2S = the PCM block, see &i2s above. */
+		i2ses = <&i2s>;
 
 		/*
 		 * Hardware PWM: analogWrite() works on D15 (GPIO 12) and
