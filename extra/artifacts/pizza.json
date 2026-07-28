@@ -1,5 +1,5 @@
 {
-  "name": "PiZZA Boards (Pi Zero on Zephyr with Arduino)",
+  "name": "PiZZa Boards (Pi Zero on Zephyr with Arduino)",
   "architecture": "zephyr",
   "category": "Contributed",
   "help": {

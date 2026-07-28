@@ -330,7 +330,7 @@ tools.jlink.upload.pattern="{path}/{cmd}" -CommanderScript "{build.path}/flasher
 #
 # sdfat: copy a sketch llext to a mounted FAT partition on the SD card
 # and unmount, for boards that boot from SD with no UF2/USB DFU
-# (e.g. the PiZZA / Raspberry Pi Zero 2 W variant). The mount-point
+# (e.g. the PiZZa / Raspberry Pi Zero 2 W variant). The mount-point
 # path is `{upload.sdfat.mount}` -- set per-board in boards.txt with
 # an OS-specific override.
 #
@@ -345,7 +345,7 @@ tools.sdfat.upload.pattern.windows=cmd /C copy "{build.path}\{build.project_name
 #
 # cdcupload: push a sketch over USB CDC to the PiZZa in-process loader
 # (1200-bps touch + "PZUP"+le32len+bytes framing; swap with no reboot).
-# Default "USB (CDC)" upload method for the PiZZA / Raspberry Pi Zero 2 W
+# Default "USB (CDC)" upload method for the PiZZa / Raspberry Pi Zero 2 W
 # variant. The uploader is the self-contained `cdc-upload` tool dependency
 # (a static Go binary built on go.bug.st/serial, no host python/pyserial),
 # installed per-host by the Boards Manager via toolsDependencies.

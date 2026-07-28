@@ -660,11 +660,11 @@ unoq.bootloader.target=stm32u585zitxq
 
 ##############################################################################################################
 
-# PiZZA -- Raspberry Pi Zero 2 W (BCM2710A1, Cortex-A53, aarch64).
+# PiZZa -- Raspberry Pi Zero 2 W (BCM2710A1, Cortex-A53, aarch64).
 # Out-of-tree variant. Sketches load as llext from a FAT file on the
 # SD card; the "loader" firmware is the kernel image written to the
 # SD boot partition. See notes/pizza-arduino-phase0.md.
-pizza.name=PiZZA (Raspberry Pi Zero 2 W)
+pizza.name=PiZZa RPi Zero 2 W (BCM2710)
 pizza.build.core=arduino
 pizza.build.crossprefix=aarch64-zephyr-elf-
 # Zephyr SDK 1.0.1 toolchain, installed by Boards Manager as the
@@ -694,7 +694,7 @@ pizza.upload.maximum_data_size=1048576
 
 # No USB DFU on this target -- the Pi boots from SD. The sketch is the raw
 # relocatable ELF (not the upstream Arduino header-wrapped variant), since
-# the PiZZA loader's fs_loader path consumes a stock ELF/llext file directly.
+# the PiZZa loader's fs_loader path consumes a stock ELF/llext file directly.
 pizza.upload.extension=elf
 
 # Skip the zephyr-sketch-tool header-wrap hooks -- the relocatable ELF
@@ -702,7 +702,7 @@ pizza.upload.extension=elf
 pizza.recipe.hooks.objcopy.postobjcopy.1.pattern=
 pizza.recipe.hooks.objcopy.postobjcopy.2.pattern=
 
-# Skip the zephyr-check-size step -- PiZZA sketches live on SD-FAT with no
+# Skip the zephyr-check-size step -- PiZZa sketches live on SD-FAT with no
 # fixed flash-partition size limit. (The default tool reads bounds from a
 # .config file we'd otherwise have to maintain.)
 pizza.recipe.size.pattern=
@@ -765,7 +765,7 @@ pizza.menu.upload_method.sdreader.upload.sdfat.mount.windows=E:
 # tracked separately; the variant .conf bakes the SD-FAT config in so the
 # loader's auto-load path picks up /SD:/sketch.llext as soon as the BCM2835
 # SDHost driver enumerates.
-pizza_zero_w.name=PiZZa (Raspberry Pi Zero W)
+pizza_zero_w.name=PiZZa RPi Zero W (BCM2835)
 pizza_zero_w.build.core=arduino
 pizza_zero_w.build.crossprefix=arm-zephyr-eabi-
 # Zephyr SDK 1.0.1 toolchain, installed by Boards Manager as the
